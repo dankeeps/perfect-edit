@@ -1,113 +1,109 @@
 ---
-name: perfect-cut
-description: Perfect Cut — corta brutos de gravação (anúncio, criativo, VSL, talking head) conferindo com o roteiro. Tira erros, tomadas repetidas, conversa com a equipe, alucinação do Whisper e TODO silêncio entre as palavras (terminou uma palavra, já entra a outra), e entrega um arquivo por anúncio na ordem do roteiro, com resolução original. Use quando pedirem para "cortar o bruto", "tirar os erros", "tirar o silêncio", "jump cut", "deixar só a fala", "corte perfeito", "/perfect-cut", ou mandarem uma pasta de brutos (ou um link do Drive) com os roteiros. Não é para edição completa (B-roll, letreiro, legenda, SFX).
+name: perfect-edit
+description: Perfect Edit — corte + edição dinâmica de anúncio e VSL vertical, do jeito que o Daniel aprovou. Parte 1 (Perfect Cut) corta brutos conferindo com o roteiro, tira erros, tomadas repetidas, conversa com a equipe e TODO silêncio. Parte 2 edita no Atlas (Octo Edição) no modelo Puro DR: B-roll na palavra certa alternando tela cheia, dividida e expert recortado no canto, B-rolls científicos (partículas, moléculas, células) nas falas de hormônio, legenda branca logo abaixo do pescoço em cada take, P&B e efeitos sonoros, trilha no volume certo. Parte 3 tem as montagens especiais: clone lado a lado, depoimentos de outra versão, juntar lead + VSL. Use quando pedirem "corta e edita", "edição dinâmica", "perfect edit", "/perfect-edit", "coloca B-roll", "edita a lead/VSL", ou mandarem brutos com roteiro para virar anúncio pronto. Só cortar: Parte 1. Só ajustar uma edição pronta no Atlas: Parte 2.
 ---
 
-# Perfect Cut
-
-Padrão de qualidade: **terminou uma palavra, já entra a outra, sem nenhum instante sem fala.** Barulho sem ninguém
-falando também sai. De cada frase fica a **última tomada boa**. Um arquivo por anúncio, na ordem do roteiro, com a
-resolução, a proporção e o fps do bruto.
+# Perfect Edit
 
 ```
-PC=~/.claude/skills/perfect-cut; PY=$PC/.venv/bin/python; SK=$PC/scripts
+PE=~/.claude/skills/perfect-edit
+PYC=$PE/.venv/bin/python                  # corte (faster-whisper + VAD)
+PYA=~/"Octo Edição/Atlas"/.venv/bin/python # edição (Atlas)
+L=~/"Octo Edição/Atlas"/lib; E="$PYA $L/estudio.py"; ED=$PE/scripts/edicao; SC=$PE/scripts/corte
 ```
-(instalação: `./install.sh` no repositório; cria a `.venv` com faster-whisper e o VAD Silero)
+Instalação na máquina nova: `./install.sh` (cria a .venv do corte, clona o Atlas do GitHub e prepara a .venv dele).
+Chaves da Apify (TikTok) e da OpenRouter (Gemini, que estuda os B-rolls) ficam no ⚙ Configurações do Atlas.
 
-## 1. Juntar o material
+---
 
-- **Roteiros**: colados no chat ou num doc. Anote por anúncio o nome, as marcações `[Pessoa / cena]`, os trechos
-  "não precisa gravar" e os "usar do outro vídeo".
-- **Brutos**: `ls -R` na pasta e `ffprobe` (duração, largura×altura). Cada subpasta costuma ser um anúncio, e os
-  arquivos `IMG_xxxx` não dizem nada; o nome certo vem do roteiro. **Não confie no nome da pasta**: confirme pela
-  transcrição que a fala bate com o roteiro daquele anúncio.
-- Pasta do Google Drive para desktop (`~/Library/CloudStorage/GoogleDrive-*`) → **copie** os brutos para o trabalho
-  antes (arquivo só na nuvem trava o ffmpeg). Os originais não são mexidos nem renomeados.
+## Parte 1 — Corte (Perfect Cut)
 
-## 2. Transcrever em blocos (em segundo plano, ~40 s por bruto)
+Padrão: **terminou uma palavra, já entra a outra.** De cada frase fica a última tomada boa. Um arquivo por anúncio,
+na ordem do roteiro, resolução original.
 
+1. **Material**: roteiros (anote nome, marcações `[Pessoa / cena]`, "não precisa gravar", "usar do outro vídeo") e brutos.
+   Pasta do Google Drive para desktop → **copie** os brutos para o trabalho antes. Confirme pela fala que o bruto é
+   daquele anúncio (nome de pasta engana).
+2. **Transcrever em blocos** (em segundo plano): `$PYC $SC/preparar.py "<brutos>" --trabalho "<trab>" --prompt "termos"`.
+   Em blocos, as tomadas repetidas aparecem (numa passada só, o Whisper as engole).
+3. **Ler `transcricao.txt` inteiro contra o roteiro** e decidir: última tomada, sai conversa com a equipe e alucinação
+   (`Tchau`, `Obrigado`, o prompt), fica palavra diferente mas certa e nome trocado de propósito (avisar no fim).
+   Palavra esticada `⟨≥1s⟩` → `$PYC $SC/conferir.py <trab> fonte CHAVE:ini:fim` (segundos). Diálogo gravado por
+   personagem → intercale as partes (a mesma chave pode repetir no plano). "Usar do outro vídeo" → a parte vem da chave do
+   outro anúncio.
+4. **plano.json** (`keep` por índices ou `{"t":[a,b]}`, `fora` por tempo) e `$PYC $SC/cortar.py <trab> NOME` — um primeiro.
+5. **Três rodadas de revisão, sempre**: (1) leitura + escuta dos duvidosos antes do plano; (2) `conferir.py pausas` (meta 0
+   ≥ 0,2 s, A/V ≤ 2 quadros) e `conferir.py texto`; (3) ouvir com `janela` cada `delete`, `insert` > 1 palavra e palavra
+   deformada — **insert de frase inteira = retomada escondida** → `fora`, renderizar de novo, repetir 2 e 3.
+   Fala corrida longa (VSL): `repeticoes.py arquivo` (janela de 4 s, whisper-cli) pega repetição sem pausa.
+
+---
+
+## Parte 2 — Edição dinâmica no Atlas (Puro DR)
+
+Projeto por anúncio a partir do vídeo cortado:
 ```
-$PY $SK/preparar.py "<pasta dos brutos>" --trabalho "<trabalho>" --prompt "termos da oferta, nomes próprios"
+$E novo --nome "<nome>" --video "<cortado.mp4>" --estilo puro-dr --expert "<Expert>" --oferta "<Oferta>"
+$PYA $ED/puro_dr.py integral "<nome>" && $E rascunho "<nome>"     # rascunho = fala com tempo no edicao.py
+$E preparar "<nome>"                                              # recorte do expert (canto/dividida), em 2º plano
 ```
-Por que em blocos: **numa passada só o Whisper engole tomadas repetidas**. Ele estica uma palavra por cima de
-2 a 4 s e some com a retomada. Transcrevendo cada trecho de fala sozinho, as repetições aparecem.
-O `--prompt` melhora a grafia, mas vira alucinação em trecho de ruído (o dump marca `«ALUCINAÇÃO?»`).
 
-## 3. Ler a transcrição inteira e decidir o que fica
+### B-roll: de onde vem
+1. Biblioteca primeiro: `$PYA $ED/puro_dr.py biblioteca "<nome>"` (só clipes estudados, disponíveis, da pasta Expert ›
+   Oferta). **Clipe usado num anúncio não volta em outro** (`puro_dr.py reservar` na escolha).
+2. Faltou → TikTok: `/usr/bin/python3 $L/tiktok.py buscar "<nome>" "<rótulo>" "termo en-US" "termo" --n 12 --regiao US`
+   (o Gemini estuda só os novos; texto queimado o vídeo todo = excluído). ~15–25% saem limpos: prefira termos
+   "cinematic / aesthetic / raw / no text". Não rode duas buscas grandes ao mesmo tempo (a Apify estoura 900 s).
+3. Antes de usar, **olhe os quadros** (`motor.py <versão> preview t1 t2…`, juntando numa folha): a ficha erra.
 
-`<trabalho>/transcricao.txt`:
-```
-######## K03_IMG_2935  (526 palavras | 720x1280 vertical | 179s | 30fps | áudio com ruído de fundo, piso -49 dB)
-@42.2  130:Mas 131:como 132:que 133:um 134:cara ...
-```
-Cada linha é um bloco de fala (começa no tempo). `NN:palavra` é o índice usado no plano. `⟨2.3s⟩` = palavra esticada.
+### O que entra e onde (feedback do Daniel)
+- **Científicos** (moléculas, células, DNA, neurônios, corpo/hormônio brilhando) em toda fala de hormônio, enzima,
+  metabolismo. Termos que renderam: "hormone molecules 3d", "cells 3d animation", "dna glowing particles", "neurons firing
+  cinematic", "human body hologram", "endocrine system 3d", "thyroid 3d animation", "blood vessels 3d animation".
+- **Gancho** com B-roll literal na palavra mais visual (ex.: "barriga dura e redonda" → um barrigudo de verdade).
+- **Densidade**: criativo dinâmico ~10–12 B-rolls/min ("pode colocar bem mais"); misture cheia, dividida e **canto
+  (expert recortado do fundo)** — pelo menos 40% fora da cheia.
+- **Sem B-roll** em interação entre duas pessoas (diálogo, clone): só o vídeo e a legenda.
+- **Tela dividida** só com clipe em que o assunto aparece inteiro na metade de cima; se cortar rosto/corpo, use `crop=[x,y,w,h]`
+  no `E.broll` ou troque por cheia. Clipe horizontal só na dividida.
+- **Final de VSL (oferta, bônus, garantias)**: sem B-roll de pessoas — só ilustrações (relógio, cronômetro, 3D, objetos),
+  motions e letreiros. Casal/detox "estragam a vibe".
+- **Troca de cor/take** no meio da fala → cubra a emenda com um B-roll cheio (ex.: fósforo acendendo em "sair do ar").
+- P&B (`E.pb`) nas falas de dor ("nada aconteceu", "efeito rebote").
 
-Regras (sempre comparando com o roteiro):
-- **Retomada**: frase ou pedaço repetido → fica **a última tomada**; sai tudo desde o ponto em que ela recomeça.
-  Sinais: palavra com `...`, bloco que termina no meio da frase, a mesma frase de novo logo depois.
-- **Retomada no meio da frase**: fica o começo da primeira + a retomada a partir do ponto em que ela recomeça
-  (`[38,42]` + `[53,67]`). Cuidado com palavra dobrada na emenda ("como" + "Como o Leandro" → corte antes do primeiro).
-- **Sai**: conversa com a equipe ("seria bom que o bagulho andasse, né?"), falso começo, frase atropelada e
-  alucinação (`Tchau, tchau`, `Obrigado`, o próprio prompt no começo do bruto). Nunca deixe alucinação dentro de
-  uma faixa: parta a faixa em volta dela.
-- **Fica**: palavra diferente do roteiro mas certa ("pra" em vez de "para", nome de aluno trocado de propósito).
-  Só sai tropeço, repetição e fala fora do roteiro. Nome trocado → avisar no fim.
-- **Palavra esticada `⟨≥1s⟩`**: ouvir o trecho sozinho: `$PY $SK/conferir.py <trab> fonte CHAVE:ini:fim`
-  (**segundos**, não índices). Retomada escondida → `fora` ou faixa por tempo.
-- **Bruto sem fala**: `conferir.py <trab> quadro CHAVE:seg` e olhe a imagem antes de decidir.
-- **Vários arquivos num anúncio**: um arquivo só, na ordem do roteiro. **Diálogo gravado por personagem** →
-  intercale as partes na ordem das falas (a mesma chave pode aparecer várias vezes no plano).
-- **"Não precisa gravar, usar do outro vídeo"** → a parte vem da chave do outro anúncio, no ponto do roteiro.
-  Comece na palavra que o roteiro pede (ex.: pular "Eu vou te explicar aqui no quadro" se o roteiro começa em "Você precisa").
-- Fala do roteiro que não foi gravada → corte o que existe e avise.
+### Montar e conferir
+- `edicao.py`: `E.broll("cheia"|"dividida"|"canto", "<âncora>", ate="<âncora>", broll="ID", ini=s, crop=[...])`. Âncoras de
+  2–3 palavras (contar ocorrência pega a errada em silêncio). O cursor só anda pra frente.
+- `$E plano "<nome>" --forcar` até sumir toda linha `regra:` (cheia 1,2–3,5 s, dividida 2–5, canto 3–6; respiro 1,5 s,
+  direto só dividida→cheia e cheia→cheia, máx. 3 seguidas). `plano --forcar` **zera sfx_extras e posição de legenda**:
+  guarde e recoloque (ou edite o plano.json direto se o Daniel mexeu no editor).
+- `$PYA $L/motor.py <versão> cabecas` → recorte do canto/dividida.
+- **Legenda**: branca, **logo abaixo do pescoço em cada take**: `$PYA $ED/legenda_por_take.py "<nome>" --abaixo -0.01`
+  (mede os ombros a cada 0,5 s; a altura única erra quando um take é close e o outro corpo inteiro). Onde houver imagem
+  importante (quadro com antes/depois), baixe a legenda daquele trecho (`lg["y"]` no plano).
+- Zoom num trecho (ex.: quadro com fotos): `P["zoom"]` com pontos `[t, z, "suave"]` e `P["ancora"]=[x, y]`.
+- **Trilha**: `$PYA $ED/trilha.py musica.wav "<nome>" --abaixo 19 --nome trilha.wav` (volumes aprovados no docstring).
+  Só instrumental (teste com Whisper). Criativo curto: sem música. VSL: baixa, principalmente no começo.
+- **SFX** saem pelas regras do modelo; extras (`sfx_extras` no plano: impacto na abertura, whoosh na troca de cena, sub-boom,
+  glitch no P&B, riser antes da virada) para dar ritmo à lead.
+- Render: `$E render "<nome>"` (um de cada vez — dois juntos derrubam o render). Confira duração, LUFS (−14) e quadros.
+- Entrega na timeline: Atlas no ar (porta 4123) → `http://localhost:4123/editor?p=<nome>&v=A`.
 
-## 4. Plano e render
+---
 
-`<trabalho>/plano.json` (exemplo completo em `plano.exemplo.json`):
-```json
-{"saida": "~/Downloads/cortados",
- "cortes": {
-  "K01": [{"key": "K01_IMG_2953", "keep": [[0,11]]},
-          {"key": "K01_IMG_2954", "keep": [[0,7]]},
-          {"key": "K01_IMG_2953", "keep": [[12,28],[33,50]]}],
-  "K03": [{"key": "K03_IMG_2935", "keep": [[2,118],[130,176]], "fora": [[129.2,132.2]]}]
- }}
-```
-- `keep` = faixas de índices (inclusive) ou `{"t":[ini,fim]}`. `fora` = trechos por tempo que saem mesmo dentro de um keep.
-- `manter` (por parte) = trechos por tempo que o corte de energia não pode picar (fala rápida embolada).
-- `"formato": {"<nome>": {"w":1080,"h":1920,"fps":30}}` no topo = anúncio que junta câmeras diferentes (escala e
-  iguala o fps). Mantenha a proporção de como o vídeo aparece (4K vertical → 1080×1920).
+## Parte 3 — Montagens especiais
 
-```
-$PY $SK/cortar.py <trabalho> K04          # renderize UM primeiro e confira
-$PY $SK/cortar.py <trabalho>              # depois os outros (em segundo plano)
-```
-O que o `cortar` faz (números calibrados, não mexa sem motivo): VAD Silero com dois limiares + palavras (tira pausa
-≥ 150 ms, deixa 1 quadro de cada lado); energia (tira trecho abaixo do limiar por ≥ 120 ms, que pega o respiro de
-0,3 s que o VAD guarda como fala); em bruto com ruído (piso > −50 dB) protege o miolo das palavras; cortes no grade
-de quadros, fade de 4 ms em cada emenda, H.264 CRF 16, AAC 192k.
+- **Clone lado a lado** (mesma pessoa em dois papéis, tripé): `python3 $ED/clone_lado_a_lado.py plano_clone.json` — quem
+  não fala já faz a ação desde o 1º quadro; confira o volume de cada parte (tempos trocados = parte muda). Depois a cena
+  vai na frente do resto cortado (`concat`) e o conjunto vira o projeto no Atlas.
+- **Espelhar um trecho** (quadro escrito ao contrário, antes/depois invertido):
+  `ffmpeg -i in.mp4 -filter_complex "[0:v]split[a][b];[b]hflip[f];[a][f]overlay=enable='between(t,T0,T1)'[v]" -map "[v]" -map 0:a -c:a copy out.mp4`
+  e recrie o projeto (as âncoras por palavra mantêm a edição).
+- **Juntar lead + VSL**: mesmo formato → `ffmpeg -f concat -safe 0 -i lista.txt -c copy -movflags +faststart saida.mp4`.
+- **Depoimentos de outra versão** (V0): `python3 $ED/inserir_depoimentos.py plano_dep.json` — depoimento com áudio entra
+  depois da frase-gancho e empurra o vídeo; imagem (antes/depois) entra por cima da fala, sem áudio. Imprime a minutagem
+  para mandar ao Daniel. Confira transcrevendo só cada trecho inserido.
 
-## 5. Revisar: três rodadas, sempre
-
-1. **Antes do plano**: transcrição lida inteira contra o roteiro e todo trecho duvidoso ouvido sozinho (`fonte`).
-2. **Máquina, depois do render**:
-   ```
-   $PY $SK/conferir.py <trabalho> pausas     # meta: 0 pausas ≥ 0,2 s e A/V com no máx. 1–2 quadros de diferença
-   $PY $SK/conferir.py <trabalho> texto      # re-transcreve a saída e compara com o que devia ficar
-   ```
-3. **Ouvido, nos pontos suspeitos**: todo `delete`, todo `insert` de mais de uma palavra e toda palavra deformada →
-   `conferir.py <trab> janela NOME:ini:fim`. **`insert`/`replace` que vira frase inteira = retomada escondida que a
-   primeira passada não pegou** (ex.: "E isso funciona tão bem por três motivos" duas vezes). Ache o tempo no bruto
-   com `fonte`, ponha em `fora`, renderize de novo e repita as rodadas 2 e 3 só nesse anúncio.
-
-Diferença de grafia ("pro"/"para o", "8"/"oito") é normal. Pausa de 0,2 a 0,4 s numa emenda entre frases também.
-
-Opcional, para fala muito corrida: `repeticoes.py arquivo.mp4` (janela curta de 4 s; precisa do whisper-cli e do
-modelo ggml em `~/whisper-models/`).
-
-## 6. Entregar
-
-- Um `.mp4` por anúncio com o nome do roteiro, na pasta pedida (padrão `~/Downloads/cortados`).
-- Resposta curta: quantos foram cortados, o que foi conferido (pausas zeradas, % de texto batendo, A/V) e os
-  avisos: anúncio sem bruto, fala não gravada, arquivos juntados ou intercalados, take reaproveitado de outro
-  anúncio, nome trocado, clipe mudo deixado de fora.
+## Entrega
+Um arquivo por anúncio em `~/Downloads/<lote>/`, com o nome do roteiro. Resposta curta: o que foi feito, o que foi
+conferido (pausas, texto, quadros, volume) e os avisos (nome trocado, fala não gravada, clipe que não existia limpo).
