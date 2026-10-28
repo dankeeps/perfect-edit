@@ -10,11 +10,14 @@ _modelo = None
 
 
 def modelo():
-    """Whisper large-v3-turbo na CPU (int8). Baixa uma vez para ~/.cache/perfect-cut/whisper."""
+    """Whisper large-v3-turbo na CPU (int8). Baixa uma vez para ~/.cache/perfect-cut/whisper.
+    PERFECT_CUT_DEVICE=cuda usa a placa NVIDIA (Windows/Linux, precisa do CUDA 12 + cuDNN 9)."""
     global _modelo
     if _modelo is None:
         from faster_whisper import WhisperModel
-        _modelo = WhisperModel(os.environ.get("PERFECT_CUT_WHISPER", "large-v3-turbo"), device="cpu", compute_type="int8",
+        dev = os.environ.get("PERFECT_CUT_DEVICE", "cpu")
+        _modelo = WhisperModel(os.environ.get("PERFECT_CUT_WHISPER", "large-v3-turbo"), device=dev,
+                               compute_type="int8" if dev == "cpu" else "float16",
                                cpu_threads=max(1, os.cpu_count() or 8), download_root=os.path.join(MODELOS, "whisper"))
     return _modelo
 

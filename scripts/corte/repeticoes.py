@@ -8,12 +8,15 @@ Em janela curta (4 s, passo 2 s) ele não tem como limpar e a repetição aparec
 de 2+ palavras que se repete dentro da janela. Repetição que existe no roteiro ("cara 2 … cara 2",
 "o seu físico… o seu objetivo") também aparece — confira no roteiro.
 
-Roda no whisper-cli (Metal/GPU, ~70 s por anúncio de 90 s); o faster-whisper em CPU levaria ~6 min.
+Roda no whisper-cli do whisper.cpp (no Mac pela Metal/GPU, ~70 s por anúncio de 90 s; o faster-whisper em CPU levaria
+~6 min). No Windows: whisper-cli.exe da release do whisper.cpp no PATH (versão CUDA com placa NVIDIA; sem placa, CPU,
+bem mais lento). WHISPER_CLI e WHISPER_GGML trocam o executável e o modelo.
 """
 import sys, os, glob, shutil, tempfile, subprocess
 from base import norm
 
-MODELO = os.path.expanduser("~/whisper-models/ggml-large-v3-turbo.bin")
+MODELO = os.path.expanduser(os.environ.get("WHISPER_GGML", "~/whisper-models/ggml-large-v3-turbo.bin"))
+CLI = os.environ.get("WHISPER_CLI", "whisper-cli")
 VAZIAS = {"o", "a", "os", "as", "de", "do", "da", "e", "e", "que", "um", "uma", "no", "na", "em", "pra", "pro", "se", "seu", "sua"}
 
 
@@ -36,12 +39,13 @@ def varrer(video, jan=4.0, passo=2.0):
         p = f"{tmp}/{t:07.1f}.wav"; ts.append((t, p))
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-t", str(jan), "-i", video, "-ac", "1", "-ar", "16000", p], check=True)
         t += passo
-    cmd = ["whisper-cli", "-m", MODELO, "-l", "pt", "-nt", "-np", "-otxt"]
+    if not shutil.which(CLI): sys.exit(f"{CLI} não encontrado: instale o whisper.cpp (README, seção repeticoes.py)")
+    cmd = [CLI, "-m", MODELO, "-l", "pt", "-nt", "-np", "-otxt"]
     for _, p in ts: cmd += ["-f", p]
     subprocess.run(cmd, capture_output=True)
     vistos = set()
     for t, p in ts:
-        texto = open(p + ".txt").read().strip().replace("\n", " ") if os.path.exists(p + ".txt") else ""
+        texto = open(p + ".txt", encoding="utf-8").read().strip().replace("\n", " ") if os.path.exists(p + ".txt") else ""
         toks = [norm(w) for w in texto.split() if norm(w)]
         for g in repetidas(toks):
             if (g, round(t / 4)) in vistos: continue

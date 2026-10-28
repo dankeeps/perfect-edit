@@ -19,7 +19,7 @@ Silêncio sai em duas camadas:
 Cortes caem no grade de quadros (áudio e vídeo com a mesma duração), emendas com fade de 4 ms (sem estalo).
 Resolução, proporção e fps originais.
 """
-import os, sys, math, tempfile, subprocess
+import os, sys, math, shutil, tempfile, subprocess
 from base import *
 from vad import planejar_segmentos
 
@@ -124,7 +124,7 @@ def render(trab, nome, partes, saida, formato=None):
                     "-f", "f32le", "-ar", "48000", "-ac", "1", "-i", f"{tmp}/audio.f32",
                     "-map", "0:v:0", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                     "-movflags", "+faststart", final], check=True)
-    subprocess.run(["rm", "-rf", tmp])
+    shutil.rmtree(tmp, ignore_errors=True)
     print(f"{nome}: {total:.1f}s -> {final}", flush=True)
 
 if __name__ == "__main__":
